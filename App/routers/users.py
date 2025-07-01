@@ -15,6 +15,12 @@ router2 = APIRouter(prefix="/user", tags=["Users"])
 
 @router2.get("/get-all-users",response_model=List[schema.returnUser])
 def get_user(db:Session = Depends(get_db)):
+     """
+         Retrieve all users from the database.
+
+         Returns:
+             A list of all users in the system.
+     """
      print("Returning all users:-")
      allusers = db.query(models.Users).all()
      return allusers
@@ -22,6 +28,15 @@ def get_user(db:Session = Depends(get_db)):
 #, get_current_user : str = Depends(oauth2.get_current_user)
 @router2.post("/create-user",status_code=status.HTTP_201_CREATED,response_model=schema.returnUser)
 def create_user(user : schema.createUser,db:Session = Depends(get_db)):
+     """
+         Create a new user with the given information.
+
+         Args:
+             user: The user data (name, email, password, etc.)
+
+         Returns:
+             The created user with its details (excluding password).
+         """
      hp= pwd_context.hash(user.Password)
      user.Password = hp
 
@@ -35,6 +50,18 @@ def create_user(user : schema.createUser,db:Session = Depends(get_db)):
 
 @router2.get(f"/get-user-by-id/{id}",response_model=schema.returnUser)
 def getByEmail(id:int, db:Session = Depends(get_db)):
+     """
+         Retrieve a user by their ID.
+
+         Args:
+             id: The ID of the user to retrieve.
+
+         Returns:
+             The user object if found.
+
+         Raises:
+             HTTPException: If the user with the given ID does not exist.
+         """
      u= db.query(models.Users).filter(models.Users.id ==id).first()
      print(u)
      if not u:
@@ -43,6 +70,19 @@ def getByEmail(id:int, db:Session = Depends(get_db)):
 
 @router2.put("/update-user/{id}")
 def update_user(id :int,updated_user : schema.createUser, db:Session = Depends(get_db)):
+     """
+         Update the details of an existing user.
+
+         Args:
+             id: The ID of the user to update.
+             updated_user: The updated user data.
+
+         Returns:
+             The updated user object.
+
+         Raises:
+             HTTPException: If the user with the given ID does not exist.
+         """
      u = db.query(models.Users).filter(models.Users.id == id).first()
      hp = pwd_context.hash(updated_user.Password)
      updated_user.Password = hp
@@ -57,6 +97,18 @@ def update_user(id :int,updated_user : schema.createUser, db:Session = Depends(g
 
 @router2.delete("/delete-user/{id}")
 def delete_user(id:int,db:Session = Depends(get_db)):
+     """
+         Delete a user from the database by their ID.
+
+         Args:
+             id: The ID of the user to delete.
+
+         Returns:
+             A 204 No Content response if the user is successfully deleted.
+
+         Raises:
+             HTTPException: If the user with the given ID does not exist.
+         """
      user = db.query(models.Users).filter(models.Users.id == id).first()
 
      if not user:
