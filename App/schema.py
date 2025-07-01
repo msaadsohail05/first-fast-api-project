@@ -7,7 +7,6 @@ class PostBase(BaseModel):
     content :str
     published : bool
 
-
 class returnUser(BaseModel):
 
     id:int
