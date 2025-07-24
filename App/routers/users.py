@@ -48,7 +48,7 @@ def create_user(user : schema.createUser,db:Session = Depends(get_db)):
      return newUser
 
 
-@router2.get(f"/get-user-by-id/{id}",response_model=schema.returnUser)
+@router2.get("/get-user-by-id/{id}",response_model=schema.returnUser)
 def getByEmail(id:int, db:Session = Depends(get_db)):
      """
          Retrieve a user by their ID.

@@ -21,6 +21,7 @@ class Rpost(BaseModel):
     id : int
     title : str
     content : str
+    image_path : str
     published : bool
     owner_id: int
     owner : returnUser
@@ -30,7 +31,7 @@ class Rpost(BaseModel):
         from_attributes = True
 
 class voteOut(BaseModel):
-    p : PostBase
+    p : Rpost
     votes : int
 
     class Config:
@@ -52,6 +53,7 @@ class userLogin(BaseModel):
 
 class Token(BaseModel):
     tokenData : str
+    refreshToken : str
     tokenType : str
 
 class tokenData(BaseModel):
@@ -61,5 +63,8 @@ class setVote(BaseModel):
     post_id : int
     dir : conint(le = 1)
     user_id : int
+
+class newToken(BaseModel):
+    rtoken : str
 
 

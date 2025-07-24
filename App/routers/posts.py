@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.params import Depends
 from typing import Optional, List
 from fastapi import  status,HTTPException, Depends, Response
@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from passlib.context import CryptContext
 from sqlalchemy import func
-
-
+import os, shutil
 
 router1 = APIRouter(prefix = "/posts",tags=["Posts"])
 
@@ -34,13 +33,20 @@ def getPosts(db:Session = Depends(get_db),current_user: schema.tokenData = Depen
     # cursor.execute("""SELECT * FROM posts""")
     # p = cursor.fetchall()
     #p = db.query(models.Post).contains(se).limit(limit).all() #.offset(s)
-
+    dummy_url = "https://posts.com"
     results = db.query(models.Post , func.count(models.Vote.post_id)).join(models.Vote, models.Vote.post_id == models.Post.id, isouter = True).group_by(models.Post.id                ).all()
+    for p,v in results:
+        path = p.image_path
+        normalized_path = path.replace("\\", "/")
+        p.image_path = f"{dummy_url}/{normalized_path}"
+        # new_url = os.path.join(dummy_url,normalized_path)
+        # new_url = path.replace("\\","/")
+        # p.image_path = new_url
     return [{"p": post, "votes": votes} for post, votes in results]
 
 
 @router1.post("/create_post",status_code=status.HTTP_201_CREATED,response_model=schema.Rpost)
-def create_post(newPost : schema.PostBase,db:Session = Depends(get_db),current_user: models.Users = Depends(oauth2.get_current_user)):
+def create_post(t : str = Form(...), con :str = Form(...), publish : bool = Form(...), image : UploadFile = File(...),db:Session = Depends(get_db),current_user: models.Users = Depends(oauth2.get_current_user)):
     """
         Create a new post.
 
@@ -51,8 +57,20 @@ def create_post(newPost : schema.PostBase,db:Session = Depends(get_db),current_u
 
         Returns:
             The created post.
-        """
+    """
+    user = db.query(models.Users).filter(models.Users.email == current_user.id).first()
+    base_folder = "App/Documents"
+    user_folder = os.path.join(base_folder, f"{user.id}")
+    os.makedirs(user_folder, exist_ok=True)
+    new_filename = image.filename
+    image_path = os.path.join(user_folder, new_filename)
+
+    with open(image_path,"wb") as f:
+        f.write(image.file.read())
     print(current_user.id)
+    path = image_path
+    normalized_path = path.replace("\\", "/")
+    image_path = normalized_path
     owner = db.query(models.Users).filter(models.Users.email == current_user.id).first() #current_user stores the email id returned in the token
 
 
@@ -62,7 +80,7 @@ def create_post(newPost : schema.PostBase,db:Session = Depends(get_db),current_u
     # newPost_dict["id"] = cursor.fetchone()["id"]
     # conn.commit()
     #raise HTTPException(status_code=status.HTTP_201_CREATED, detail=f"Post {newPost_dict["id"]} successfully created!")
-    n = models.Post(title = newPost.title, content = newPost.content, published = newPost.published, owner_id = owner.id)
+    n = models.Post(title = t, content = con, published = publish,image_path=image_path, owner_id = owner.id)
     db.add(n)
     db.commit()
     db.refresh(n)
@@ -112,15 +130,15 @@ def getByID(id : int, db:Session = Depends(get_db),current_user: schema.tokenDat
             models.Post.title,
             models.Post.content,
             models.Post.published,
+            models.Post.image_path,
             models.Post.created_at,
-            models.Post.owner_id
-        ).first()
+            models.Post.owner_id).first()
     post, votes = result
     return {"p": post, "votes": votes}
 
 
 @router1.put("/update/{id}/",response_model=schema.Rpost)
-def update_post(id: int, updatedPost : schema.PostBase, db:Session = Depends(get_db),current_user: schema.tokenData = Depends(oauth2.get_current_user)):
+def update_post(id: int,t : str = Form(...), con :str = Form(...), publish : bool = Form(...), image : UploadFile = File(None), db:Session = Depends(get_db),current_user: schema.tokenData = Depends(oauth2.get_current_user)):
     """
         Update an existing post.
 
@@ -149,9 +167,37 @@ def update_post(id: int, updatedPost : schema.PostBase, db:Session = Depends(get
 
     if pos.owner_id != own.id:
          raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot perform this action")
-    pos.update(updatedPost.dict())
+    pos.title = t
+    pos.content = con
+    pos.published = publish
+    if image:
+        # Normalize and resolve the full path
+        old_image_path = os.path.abspath(pos.image_path)
+        old_image_path = os.path.normpath(old_image_path)
+
+        print("Trying to delete:", old_image_path)
+        if os.path.exists(old_image_path):
+            os.remove(old_image_path)
+            print("Old image deleted successfully.")
+        else:
+            print("Old image not found at path.")
+
+        username = db.query(models.Users.email).filter(models.Users.id==pos.owner_id).first()
+        username = username.email
+        user_folder = os.path.join("App", "Documents", f"{username}")
+        os.makedirs(user_folder, exist_ok=True)
+
+        # Construct image path
+        filename = image.filename
+        image_path = os.path.join(user_folder, filename)
+
+        # Save image file
+        with open(image_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        pos.image_path= image_path
     db.commit()
-    return  pos.first()
+    db.refresh(pos)
+    return  pos
 
 @router1.delete("/delete/{id}",response_model=schema.Rpost)
 def delete_post(id : int,db:Session = Depends(get_db),current_user: schema.tokenData = Depends(oauth2.get_current_user)):
@@ -173,8 +219,8 @@ def delete_post(id : int,db:Session = Depends(get_db),current_user: schema.token
     # cursor.execute("""DELETE FROM posts WHERE id = %s """,(id,))
     # conn.commit()
 
-    po = db.query(models.Post).filter(models.Post.id == id).first()
-    if not po:
+    pos = db.query(models.Post).filter(models.Post.id == id).first()
+    if not pos:
          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="Post not found")
     own = db.query(models.Users).filter(models.Users.email == current_user.id).first()
     if not own:
@@ -182,7 +228,15 @@ def delete_post(id : int,db:Session = Depends(get_db),current_user: schema.token
 
     if pos.owner_id != own.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot perform this action")
-    db.delete(po)
+    if pos.image_path:
+        image_path = os.path.abspath(pos.image_path)
+        if os.path.isfile(image_path):
+            os.remove(image_path)
+            print(f"✅ Deleted image at: {image_path}")
+        else:
+            print(f"⚠️ Image not found at: {image_path}")
+
+    db.delete(pos)
     db.commit()
-    raise HTTPException(status_code=status.HTTP_204_NO_CONTENT,detail= f"post with  has been deleted")
-    return {"msg":"post deleted successfully","data":po}
+    raise HTTPException(status_code=status.HTTP_204_NO_CONTENT,detail= f"post has been deleted")
+    return {"msg":"post deleted successfully","data":pos}
